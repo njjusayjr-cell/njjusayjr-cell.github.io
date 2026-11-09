@@ -1,8 +1,10 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="referrer" content="no-referrer">
   <title>RHENZ Digital Solution | Device Registration</title>
 
   <script
@@ -42,31 +44,157 @@
       color: #66736a;
       line-height: 1.6;
     }
+
+    #status {
+      margin-top: 22px;
+      overflow-wrap: anywhere;
+    }
   </style>
 </head>
 
 <body>
   <main class="container">
     <h1>RHENZ Digital Solution</h1>
-
     <h2>Case Manager Tool</h2>
 
-    <p class="message">
-      Secure Device Registration
-    </p>
+    <p class="message">Secure Device Registration</p>
 
     <p class="message">
       Please complete the security verification to continue.
     </p>
 
     <div
-  class="cf-turnstile"
-  data-sitekey="0x4AAAAAAF5oRF4Ua2hXo2iB">
-</div>
+      class="cf-turnstile"
+      data-sitekey="0x4AAAAAAF5oRF4Ua2hXo2iB"
+      data-callback="onTurnstileSuccess"
+      data-error-callback="onTurnstileError"
+      data-expired-callback="onTurnstileExpired">
+    </div>
 
     <p id="status" class="message">
-      Waiting for verification.
+      Checking registration session...
     </p>
   </main>
+
+  <script>
+    const SUPABASE_URL =
+      "https://wrxjqioznfsckoeqsutq.supabase.co";
+
+    const SUPABASE_PUBLISHABLE_KEY =
+      "sb_publishable_Y5axE_uXb_xO-S0eMJxT1Q_HdeUcBbs";
+
+    const COMPLETE_URL =
+      SUPABASE_URL +
+      "/functions/v1/complete-registration-session";
+
+    const statusElement = document.getElementById("status");
+
+    let sessionId = null;
+    let sessionSecret = null;
+    let processing = false;
+
+    function showStatus(message) {
+      statusElement.textContent = message;
+    }
+
+    function initializeSession() {
+      const params = new URLSearchParams(
+        window.location.hash.substring(1)
+      );
+
+      sessionId =
+        params.get("session_id") ||
+        params.get("session");
+
+      sessionSecret = params.get("secret");
+
+      // Remove session credentials from the visible URL.
+      window.history.replaceState(
+        null,
+        document.title,
+        window.location.pathname + window.location.search
+      );
+
+      if (!sessionId || !sessionSecret) {
+        showStatus(
+          "Registration session is missing. Please return to the Case Manager Tool and try again."
+        );
+        return false;
+      }
+
+      showStatus(
+        "Session ready. Please complete the security verification."
+      );
+
+      return true;
+    }
+
+    async function onTurnstileSuccess(turnstileToken) {
+      if (processing) return;
+
+      processing = true;
+      showStatus("Verifying security and registering device...");
+
+      try {
+        const response = await fetch(COMPLETE_URL, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "apikey": SUPABASE_PUBLISHABLE_KEY
+          },
+          body: JSON.stringify({
+            session_id: sessionId,
+            session_secret: sessionSecret,
+            turnstile_token: turnstileToken
+          })
+        });
+
+        const result = await response.json();
+
+        if (!response.ok || result.success !== true) {
+          throw new Error(
+            result.message || "Registration could not be completed."
+          );
+        }
+
+        if (result.is_new_device !== true) {
+          showStatus(
+            "This device is already registered. Please use its existing device token or contact the administrator for an authorized token reset."
+          );
+          return;
+        }
+
+        showStatus(
+          "Device registration successful! Return to the Case Manager Tool to complete activation."
+        );
+
+      } catch (error) {
+        showStatus(
+          error.message || "Registration failed. Please try again."
+        );
+
+        if (window.turnstile) {
+          window.turnstile.reset();
+        }
+
+      } finally {
+        processing = false;
+      }
+    }
+
+    function onTurnstileError() {
+      showStatus(
+        "Security verification failed. Please try again."
+      );
+    }
+
+    function onTurnstileExpired() {
+      showStatus(
+        "Security verification expired. Please verify again."
+      );
+    }
+
+    initializeSession();
+  </script>
 </body>
 </html>
